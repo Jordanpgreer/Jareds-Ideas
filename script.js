@@ -3,6 +3,7 @@ const ideaInput = document.getElementById("ideaInput");
 const ideasList = document.getElementById("ideasList");
 const statusMessage = document.getElementById("statusMessage");
 const submitButton = document.getElementById("submitButton");
+const NOTE_TOGGLE_THRESHOLD = 78;
 
 const ratingClassByLabel = {
   "Dumb": "rating-dumb",
@@ -35,7 +36,8 @@ function renderIdea(idea, prepend = false) {
 
   const noteNode = document.createElement("p");
   noteNode.className = "idea-note";
-  noteNode.textContent = idea.rating_note || "";
+  const noteText = (idea.rating_note || "").trim();
+  noteNode.textContent = noteText;
 
   const badge = document.createElement("span");
   const ratingClass = ratingClassByLabel[idea.rating] || "rating-meh";
@@ -44,7 +46,32 @@ function renderIdea(idea, prepend = false) {
   item.classList.add(ratingItemClassByLabel[idea.rating] || "item-meh");
 
   contentWrap.appendChild(textNode);
-  contentWrap.appendChild(noteNode);
+  if (noteText.length > NOTE_TOGGLE_THRESHOLD) {
+    noteNode.classList.add("is-collapsed");
+
+    const noteWrap = document.createElement("div");
+    noteWrap.className = "idea-note-wrap";
+
+    const toggle = document.createElement("button");
+    toggle.type = "button";
+    toggle.className = "note-toggle";
+    toggle.setAttribute("aria-expanded", "false");
+    toggle.textContent = "▼";
+
+    toggle.addEventListener("click", () => {
+      const expanded = toggle.getAttribute("aria-expanded") === "true";
+      toggle.setAttribute("aria-expanded", expanded ? "false" : "true");
+      toggle.textContent = expanded ? "▼" : "▲";
+      noteNode.classList.toggle("is-collapsed", expanded);
+      noteNode.classList.toggle("is-expanded", !expanded);
+    });
+
+    noteWrap.appendChild(noteNode);
+    noteWrap.appendChild(toggle);
+    contentWrap.appendChild(noteWrap);
+  } else {
+    contentWrap.appendChild(noteNode);
+  }
   item.appendChild(contentWrap);
   item.appendChild(badge);
 

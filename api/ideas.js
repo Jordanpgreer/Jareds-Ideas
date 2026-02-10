@@ -80,7 +80,7 @@ function normalizeNote(value, rating) {
     return fallback;
   }
 
-  const limited = cleaned.slice(0, 90);
+  const limited = cleaned.slice(0, 160);
 
   if (rating === "Dumb") {
     return /^dumb\s*-/i.test(limited) ? limited : `dumb - ${limited.toLowerCase()}`;
