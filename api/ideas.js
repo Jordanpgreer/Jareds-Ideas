@@ -6,6 +6,10 @@ const ALLOWED_METHODS = ["GET", "POST", "OPTIONS"];
 const DEEPSEEK_API_URL = "https://api.deepseek.com/chat/completions";
 const DEFAULT_DEEPSEEK_MODEL = "deepseek-chat";
 const AI_TIMEOUT_MS = 12000;
+const IDEA_SOURCE = {
+  AI: "ai",
+  HUMAN: "human"
+};
 const DEFAULT_NOTES_BY_RATING = {
   Dumb: "dumb - bad idea",
   Meh: "meh - no profit",
@@ -227,6 +231,60 @@ function normalizeIdea(value) {
   return value.replace(/\s+/g, " ").trim();
 }
 
+function normalizeSource(value) {
+  return value === IDEA_SOURCE.AI ? IDEA_SOURCE.AI : IDEA_SOURCE.HUMAN;
+}
+
+async function generateAiIdeaText(apiKey, model) {
+  const controller = new AbortController();
+  const timeout = setTimeout(() => controller.abort(), AI_TIMEOUT_MS);
+
+  try {
+    const response = await fetch(DEEPSEEK_API_URL, {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        Authorization: `Bearer ${apiKey}`
+      },
+      body: JSON.stringify({
+        model,
+        temperature: 0.8,
+        messages: [
+          {
+            role: "system",
+            content: "You generate practical startup ideas. Keep them short, specific, and commercially realistic."
+          },
+          {
+            role: "user",
+            content:
+              "Generate one very short but well-thought-out business idea in plain text. " +
+              "No numbering, no labels, no quotes. Keep it under 120 characters."
+          }
+        ]
+      }),
+      signal: controller.signal
+    });
+
+    const data = await response.json().catch(() => ({}));
+    if (!response.ok) {
+      const apiMessage =
+        data && data.error && typeof data.error.message === "string" ? data.error.message : "DeepSeek request failed.";
+      throw new Error(apiMessage);
+    }
+
+    const content = data && data.choices && data.choices[0] && data.choices[0].message ? data.choices[0].message.content : "";
+    const idea = normalizeIdea(content);
+
+    if (!idea) {
+      throw new Error("DeepSeek returned an empty generated idea.");
+    }
+
+    return idea.slice(0, MAX_IDEA_LENGTH);
+  } finally {
+    clearTimeout(timeout);
+  }
+}
+
 async function ensureTable(sql) {
   if (tableReady) {
     return;
@@ -245,6 +303,11 @@ async function ensureTable(sql) {
   await sql`
     ALTER TABLE ideas
     ADD COLUMN IF NOT EXISTS rating_note VARCHAR(160) NOT NULL DEFAULT '';
+  `;
+
+  await sql`
+    ALTER TABLE ideas
+    ADD COLUMN IF NOT EXISTS source VARCHAR(10) NOT NULL DEFAULT 'human';
   `;
 
   await sql`
@@ -302,7 +365,7 @@ module.exports = async function handler(req, res) {
 
     if (req.method === "GET") {
       const rows = await sql`
-        SELECT id, idea_text, rating, rating_note, created_at
+        SELECT id, idea_text, rating, rating_note, source, created_at
         FROM ideas
         ORDER BY created_at DESC
         LIMIT 100;
@@ -310,6 +373,7 @@ module.exports = async function handler(req, res) {
 
       const normalizedRows = rows.map((row) => ({
         ...row,
+        source: normalizeSource(row.source),
         rating_note:
           row.rating_note && row.rating_note.trim() && !OLD_DEFAULT_NOTES.has(row.rating_note.trim())
             ? normalizeNote(row.rating_note, row.rating)
@@ -339,6 +403,24 @@ module.exports = async function handler(req, res) {
       return res.status(200).json({ message: "Ideas rerated.", ...result });
     }
 
+    if (body.action === "generate_and_rate") {
+      const generatedIdea = await generateAiIdeaText(deepseekApiKey, deepseekModel);
+      const aiResult = await getAiRating(generatedIdea, deepseekApiKey, deepseekModel);
+      const finalResult = applyProfitabilityGuardrail(generatedIdea, aiResult);
+      const [created] = await sql`
+        INSERT INTO ideas (idea_text, rating, rating_note, source)
+        VALUES (${generatedIdea}, ${finalResult.rating}, ${finalResult.note}, ${IDEA_SOURCE.AI})
+        RETURNING id, idea_text, rating, rating_note, source, created_at;
+      `;
+
+      return res.status(201).json({
+        idea: {
+          ...created,
+          source: normalizeSource(created.source)
+        }
+      });
+    }
+
     const idea = normalizeIdea(body.idea);
 
     if (!idea) {
@@ -352,12 +434,17 @@ module.exports = async function handler(req, res) {
     const aiResult = await getAiRating(idea, deepseekApiKey, deepseekModel);
     const finalResult = applyProfitabilityGuardrail(idea, aiResult);
     const [created] = await sql`
-      INSERT INTO ideas (idea_text, rating, rating_note)
-      VALUES (${idea}, ${finalResult.rating}, ${finalResult.note})
-      RETURNING id, idea_text, rating, rating_note, created_at;
+      INSERT INTO ideas (idea_text, rating, rating_note, source)
+      VALUES (${idea}, ${finalResult.rating}, ${finalResult.note}, ${IDEA_SOURCE.HUMAN})
+      RETURNING id, idea_text, rating, rating_note, source, created_at;
     `;
 
-    return res.status(201).json({ idea: created });
+    return res.status(201).json({
+      idea: {
+        ...created,
+        source: normalizeSource(created.source)
+      }
+    });
   } catch (error) {
     console.error("ideas API error", error);
     return res.status(500).json({ error: "Failed to process request." });

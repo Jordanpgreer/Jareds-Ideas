@@ -163,6 +163,12 @@ h1 {
   margin-top: 28px;
 }
 
+.form-actions {
+  display: grid;
+  grid-template-columns: 1fr;
+  gap: 10px;
+}
+
 .idea-form input {
   border: 1px solid rgba(169, 208, 255, 0.34);
   border-radius: 15px;
@@ -199,6 +205,12 @@ h1 {
   cursor: pointer;
   transition: transform 0.25s ease, box-shadow 0.25s ease, opacity 0.2s ease;
   animation: buttonFlow 7s ease-in-out infinite;
+}
+
+#generateButton {
+  color: #eaf6ff;
+  background: linear-gradient(120deg, rgba(122, 180, 255, 0.35), rgba(108, 156, 255, 0.35));
+  border: 1px solid rgba(155, 201, 255, 0.42);
 }
 
 .idea-form button:hover {
@@ -272,6 +284,28 @@ h2 {
   color: #f1f6ff;
   word-break: break-word;
   font-weight: 600;
+}
+
+.source-chip {
+  width: fit-content;
+  border-radius: 999px;
+  padding: 3px 9px;
+  font-size: 0.72rem;
+  font-weight: 700;
+  letter-spacing: 0.01em;
+  text-transform: uppercase;
+}
+
+.source-ai {
+  background: rgba(124, 207, 255, 0.22);
+  border: 1px solid rgba(124, 207, 255, 0.54);
+  color: #def5ff;
+}
+
+.source-human {
+  background: rgba(135, 241, 172, 0.2);
+  border: 1px solid rgba(135, 241, 172, 0.5);
+  color: #e7ffef;
 }
 
 .idea-note {
@@ -469,6 +503,10 @@ h2 {
 
   .idea-form button {
     min-height: 49px;
+  }
+
+  .form-actions {
+    grid-template-columns: 1fr;
   }
 
   .idea-item {

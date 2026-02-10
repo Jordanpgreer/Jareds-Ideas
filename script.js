@@ -3,6 +3,7 @@ const ideaInput = document.getElementById("ideaInput");
 const ideasList = document.getElementById("ideasList");
 const statusMessage = document.getElementById("statusMessage");
 const submitButton = document.getElementById("submitButton");
+const generateButton = document.getElementById("generateButton");
 const NOTE_TOGGLE_THRESHOLD = 78;
 
 const ratingClassByLabel = {
@@ -34,6 +35,11 @@ function renderIdea(idea, prepend = false) {
   textNode.className = "idea-title";
   textNode.textContent = idea.idea_text;
 
+  const sourceNode = document.createElement("span");
+  const sourceValue = idea.source === "ai" ? "AI" : "Human";
+  sourceNode.className = `source-chip source-${sourceValue.toLowerCase()}`;
+  sourceNode.textContent = sourceValue;
+
   const noteNode = document.createElement("p");
   noteNode.className = "idea-note";
   const noteText = (idea.rating_note || "").trim();
@@ -46,6 +52,7 @@ function renderIdea(idea, prepend = false) {
   item.classList.add(ratingItemClassByLabel[idea.rating] || "item-meh");
 
   contentWrap.appendChild(textNode);
+  contentWrap.appendChild(sourceNode);
   if (noteText.length > NOTE_TOGGLE_THRESHOLD) {
     noteNode.classList.add("is-collapsed");
 
@@ -83,6 +90,13 @@ function renderIdea(idea, prepend = false) {
   ideasList.appendChild(item);
 }
 
+function setButtonsDisabled(isDisabled) {
+  submitButton.disabled = isDisabled;
+  if (generateButton) {
+    generateButton.disabled = isDisabled;
+  }
+}
+
 async function loadIdeas() {
   setStatus("Loading ideas...");
 
@@ -111,7 +125,7 @@ ideaForm.addEventListener("submit", async (event) => {
     return;
   }
 
-  submitButton.disabled = true;
+  setButtonsDisabled(true);
   setStatus("Saving idea...");
 
   try {
@@ -136,8 +150,38 @@ ideaForm.addEventListener("submit", async (event) => {
   } catch (error) {
     setStatus(error.message || "Could not save idea.", true);
   } finally {
-    submitButton.disabled = false;
+    setButtonsDisabled(false);
   }
 });
+
+if (generateButton) {
+  generateButton.addEventListener("click", async () => {
+    setButtonsDisabled(true);
+    setStatus("Generating and rating idea...");
+
+    try {
+      const response = await fetch("/api/ideas", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json"
+        },
+        body: JSON.stringify({ action: "generate_and_rate" })
+      });
+
+      const data = await response.json();
+
+      if (!response.ok) {
+        throw new Error(data.error || "Could not generate idea.");
+      }
+
+      renderIdea(data.idea, true);
+      setStatus("");
+    } catch (error) {
+      setStatus(error.message || "Could not generate idea.", true);
+    } finally {
+      setButtonsDisabled(false);
+    }
+  });
+}
 
 loadIdeas();
