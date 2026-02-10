@@ -1,0 +1,39 @@
+﻿<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Jared's Ideas</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+  <link href="https://fonts.googleapis.com/css2?family=Bricolage+Grotesque:wght@400;600;700;800&family=Outfit:wght@400;600;700&display=swap" rel="stylesheet" />
+  <link rel="stylesheet" href="styles.css" />
+</head>
+<body>
+  <div class="bg-orb orb-a"></div>
+  <div class="bg-orb orb-b"></div>
+  <div class="bg-orb orb-c"></div>
+
+  <main class="app-shell">
+    <section class="hero-card">
+      <h1>Welcome Jared</h1>
+      <p class="subtitle">Drop your next business idea below and get a quick rating.</p>
+
+      <form id="ideaForm" class="idea-form" autocomplete="off">
+        <label class="sr-only" for="ideaInput">Business idea</label>
+        <input id="ideaInput" name="idea" type="text" maxlength="180" placeholder="Type your business idea..." required />
+        <button id="submitButton" type="submit">Rate Idea</button>
+      </form>
+
+      <p id="statusMessage" class="status-message" aria-live="polite"></p>
+
+      <div class="ideas-wrap">
+        <h2>Rated Ideas</h2>
+        <ul id="ideasList" class="ideas-list" aria-live="polite"></ul>
+      </div>
+    </section>
+  </main>
+
+  <script src="script.js"></script>
+</body>
+</html>
