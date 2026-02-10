@@ -6,19 +6,24 @@ A one-page Vercel app where visitors submit business ideas and get rated as Dumb
 - Static frontend: `index.html`, `styles.css`, `script.js`
 - Vercel serverless API: `api/ideas.js`
 - Database: Neon Postgres via `@neondatabase/serverless`
+- AI rating: DeepSeek Chat Completions API
 
 ## Environment Variables
 Create `DATABASE_URL` in Vercel Project Settings -> Environment Variables.
 
 Use your Neon Postgres connection string (not the `apirest` Data API URL).
 
+Create `DEEPSEEK_API_KEY` in Vercel Project Settings -> Environment Variables.
+
+Optional: set `DEEPSEEK_MODEL` (default is `deepseek-chat`).
+
 ## Local Dev
 1. `npm install`
-2. Copy `.env.example` to `.env` and set `DATABASE_URL`
+2. Copy `.env.example` to `.env` and set `DATABASE_URL` and `DEEPSEEK_API_KEY`
 3. `npm run dev`
 
 ## Deploy on Vercel
 1. Import this repo in Vercel
 2. Framework preset: `Other`
-3. Set `DATABASE_URL`
+3. Set `DATABASE_URL` and `DEEPSEEK_API_KEY`
 4. Deploy
