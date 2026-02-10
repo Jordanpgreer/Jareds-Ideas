@@ -93,6 +93,31 @@ function normalizeNote(value, rating) {
   return limited;
 }
 
+function applyProfitabilityGuardrail(ideaText, aiResult) {
+  const text = ideaText.toLowerCase();
+  const lacksClearRevenue =
+    !/(subscription|fee|membership|ads|advertis|sponsor|commission|marketplace|sell|sales|price|paid|paying|b2b|enterprise|saas|licens)/i.test(
+      text
+    );
+  const charityLike = /(charity|donat|free food|feed (the )?homeless|nonprofit|without food|give away)/i.test(text);
+
+  if (charityLike && lacksClearRevenue) {
+    return {
+      rating: "Meh",
+      note: "meh - heart is good, business model is missing"
+    };
+  }
+
+  if (aiResult.rating === "Really Good" && lacksClearRevenue) {
+    return {
+      rating: "Kinda Good",
+      note: "kinda good - idea is decent, but revenue path is unclear"
+    };
+  }
+
+  return aiResult;
+}
+
 async function getAiRating(ideaText, apiKey, model) {
   const controller = new AbortController();
   const timeout = setTimeout(() => controller.abort(), AI_TIMEOUT_MS);
@@ -325,9 +350,10 @@ module.exports = async function handler(req, res) {
     }
 
     const aiResult = await getAiRating(idea, deepseekApiKey, deepseekModel);
+    const finalResult = applyProfitabilityGuardrail(idea, aiResult);
     const [created] = await sql`
       INSERT INTO ideas (idea_text, rating, rating_note)
-      VALUES (${idea}, ${aiResult.rating}, ${aiResult.note})
+      VALUES (${idea}, ${finalResult.rating}, ${finalResult.note})
       RETURNING id, idea_text, rating, rating_note, created_at;
     `;
 
