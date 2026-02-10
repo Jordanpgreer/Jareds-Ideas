@@ -7,11 +7,19 @@ const DEEPSEEK_API_URL = "https://api.deepseek.com/chat/completions";
 const DEFAULT_DEEPSEEK_MODEL = "deepseek-chat";
 const AI_TIMEOUT_MS = 12000;
 const DEFAULT_NOTES_BY_RATING = {
-  Dumb: "Bold, chaotic, and financially allergic.",
-  Meh: "Cute concept, but the profit math is missing.",
-  "Kinda Good": "Some potential, but it needs a clearer path to real profit.",
-  "Really Good": "Strong, realistic, and clearly profit-oriented."
+  Dumb: "dumb - bad idea",
+  Meh: "meh - no profit",
+  "Kinda Good": "kinda good - needs a clearer money path",
+  "Really Good": "really good - realistic and profitable"
 };
+const OLD_DEFAULT_NOTES = new Set([
+  "Just a plain dumb idea.",
+  "Very kind, but not profitable.",
+  "Some potential, but it needs a clearer path to real profit.",
+  "Strong, realistic, and clearly profit-oriented.",
+  "Bold, chaotic, and financially allergic.",
+  "Cute concept, but the profit math is missing."
+]);
 let tableReady = false;
 
 function normalizeRating(value) {
@@ -60,6 +68,31 @@ function extractRatingFromText(text) {
   return null;
 }
 
+function normalizeNote(value, rating) {
+  const fallback = DEFAULT_NOTES_BY_RATING[rating] || "";
+
+  if (typeof value !== "string") {
+    return fallback;
+  }
+
+  const cleaned = value.replace(/\s+/g, " ").trim().replace(/[.]+$/g, "");
+  if (!cleaned) {
+    return fallback;
+  }
+
+  const limited = cleaned.slice(0, 90);
+
+  if (rating === "Dumb") {
+    return /^dumb\s*-/i.test(limited) ? limited : `dumb - ${limited.toLowerCase()}`;
+  }
+
+  if (rating === "Meh") {
+    return /^meh\s*-/i.test(limited) ? limited : `meh - ${limited.toLowerCase()}`;
+  }
+
+  return limited;
+}
+
 async function getAiRating(ideaText, apiKey, model) {
   const controller = new AbortController();
   const timeout = setTimeout(() => controller.abort(), AI_TIMEOUT_MS);
@@ -88,7 +121,8 @@ async function getAiRating(ideaText, apiKey, model) {
               '{"rating":"<one label>","note":"<short verdict>"} ' +
               "where rating is exactly one of: Dumb, Meh, Kinda Good, Really Good. " +
               "The note must be short, direct, and explain realism/profitability. " +
-              "If rating is Dumb or Meh, make the note witty but not mean, max 12 words."
+              "For Dumb and Meh ratings, use a short edgy witty style (2-6 words), with format like " +
+              '"dumb - <tag>" or "meh - <tag>". If idea is discriminatory, call it out directly (example: "dumb - racist").'
           }
         ],
         response_format: {
@@ -130,11 +164,33 @@ async function getAiRating(ideaText, apiKey, model) {
     }
 
     const fallbackNote = DEFAULT_NOTES_BY_RATING[parsedRating];
-    const finalNote = parsedNote && parsedNote.length <= 140 ? parsedNote : fallbackNote;
+    const finalNote = normalizeNote(parsedNote && parsedNote.length <= 140 ? parsedNote : fallbackNote, parsedRating);
     return { rating: parsedRating, note: finalNote };
   } finally {
     clearTimeout(timeout);
   }
+}
+
+async function rerateIdeas(sql, apiKey, model, limit = 20) {
+  const rows = await sql`
+    SELECT id, idea_text
+    FROM ideas
+    ORDER BY created_at DESC
+    LIMIT ${limit};
+  `;
+
+  let updated = 0;
+  for (const row of rows) {
+    const aiResult = await getAiRating(row.idea_text, apiKey, model);
+    await sql`
+      UPDATE ideas
+      SET rating = ${aiResult.rating}, rating_note = ${aiResult.note}
+      WHERE id = ${row.id};
+    `;
+    updated += 1;
+  }
+
+  return { selected: rows.length, updated };
 }
 
 function normalizeIdea(value) {
@@ -229,13 +285,35 @@ module.exports = async function handler(req, res) {
 
       const normalizedRows = rows.map((row) => ({
         ...row,
-        rating_note: row.rating_note && row.rating_note.trim() ? row.rating_note : DEFAULT_NOTES_BY_RATING[row.rating] || ""
+        rating_note:
+          row.rating_note && row.rating_note.trim() && !OLD_DEFAULT_NOTES.has(row.rating_note.trim())
+            ? normalizeNote(row.rating_note, row.rating)
+            : DEFAULT_NOTES_BY_RATING[row.rating] || ""
       }));
 
       return res.status(200).json({ ideas: normalizedRows });
     }
 
     const body = parseJsonBody(req);
+
+    if (body.action === "rerate_all") {
+      const adminToken = process.env.RERATE_ADMIN_TOKEN;
+      const providedToken = typeof body.adminToken === "string" ? body.adminToken : "";
+      const limitRaw = Number(body.limit);
+      const limit = Number.isFinite(limitRaw) ? Math.max(1, Math.min(50, Math.floor(limitRaw))) : 20;
+
+      if (!adminToken) {
+        return res.status(500).json({ error: "Missing RERATE_ADMIN_TOKEN environment variable." });
+      }
+
+      if (!providedToken || providedToken !== adminToken) {
+        return res.status(401).json({ error: "Unauthorized rerate request." });
+      }
+
+      const result = await rerateIdeas(sql, deepseekApiKey, deepseekModel, limit);
+      return res.status(200).json({ message: "Ideas rerated.", ...result });
+    }
+
     const idea = normalizeIdea(body.idea);
 
     if (!idea) {
