@@ -10,6 +10,12 @@ const ratingClassByLabel = {
   "Kinda Good": "rating-kinda-good",
   "Really Good": "rating-really-good"
 };
+const ratingItemClassByLabel = {
+  "Dumb": "item-dumb",
+  "Meh": "item-meh",
+  "Kinda Good": "item-kinda-good",
+  "Really Good": "item-really-good"
+};
 
 function setStatus(message, isError = false) {
   statusMessage.textContent = message;
@@ -20,15 +26,26 @@ function renderIdea(idea, prepend = false) {
   const item = document.createElement("li");
   item.className = "idea-item";
 
+  const contentWrap = document.createElement("div");
+  contentWrap.className = "idea-content";
+
   const textNode = document.createElement("p");
+  textNode.className = "idea-title";
   textNode.textContent = idea.idea_text;
+
+  const noteNode = document.createElement("p");
+  noteNode.className = "idea-note";
+  noteNode.textContent = idea.rating_note || "";
 
   const badge = document.createElement("span");
   const ratingClass = ratingClassByLabel[idea.rating] || "rating-meh";
   badge.className = `rating-badge ${ratingClass}`;
   badge.textContent = idea.rating;
+  item.classList.add(ratingItemClassByLabel[idea.rating] || "item-meh");
 
-  item.appendChild(textNode);
+  contentWrap.appendChild(textNode);
+  contentWrap.appendChild(noteNode);
+  item.appendChild(contentWrap);
   item.appendChild(badge);
 
   if (prepend) {

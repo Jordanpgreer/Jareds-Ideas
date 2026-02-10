@@ -6,6 +6,12 @@ const ALLOWED_METHODS = ["GET", "POST", "OPTIONS"];
 const DEEPSEEK_API_URL = "https://api.deepseek.com/chat/completions";
 const DEFAULT_DEEPSEEK_MODEL = "deepseek-chat";
 const AI_TIMEOUT_MS = 12000;
+const DEFAULT_NOTES_BY_RATING = {
+  Dumb: "Bold, chaotic, and financially allergic.",
+  Meh: "Cute concept, but the profit math is missing.",
+  "Kinda Good": "Some potential, but it needs a clearer path to real profit.",
+  "Really Good": "Strong, realistic, and clearly profit-oriented."
+};
 let tableReady = false;
 
 function normalizeRating(value) {
@@ -72,11 +78,17 @@ async function getAiRating(ideaText, apiKey, model) {
           {
             role: "system",
             content:
-              "You are rating business ideas. Return only one of these exact labels: Dumb, Meh, Kinda Good, Really Good."
+              "You are a strict startup evaluator. Rate each idea by realistic execution and profitability potential."
           },
           {
             role: "user",
-            content: `Idea: ${ideaText}\n\nRespond with JSON exactly like {"rating":"<one label>"}.`
+            content:
+              `Idea: ${ideaText}\n\n` +
+              "Respond with JSON exactly like " +
+              '{"rating":"<one label>","note":"<short verdict>"} ' +
+              "where rating is exactly one of: Dumb, Meh, Kinda Good, Really Good. " +
+              "The note must be short, direct, and explain realism/profitability. " +
+              "If rating is Dumb or Meh, make the note witty but not mean, max 12 words."
           }
         ],
         response_format: {
@@ -96,12 +108,16 @@ async function getAiRating(ideaText, apiKey, model) {
     const content = data && data.choices && data.choices[0] && data.choices[0].message ? data.choices[0].message.content : "";
     let parsedRating = null;
 
+    let parsedNote = null;
+
     if (typeof content === "string" && content.trim().startsWith("{")) {
       try {
         const parsed = JSON.parse(content);
         parsedRating = normalizeRating(parsed && parsed.rating);
+        parsedNote = typeof parsed?.note === "string" ? parsed.note.trim() : null;
       } catch {
         parsedRating = null;
+        parsedNote = null;
       }
     }
 
@@ -113,7 +129,9 @@ async function getAiRating(ideaText, apiKey, model) {
       throw new Error("DeepSeek returned an invalid rating.");
     }
 
-    return parsedRating;
+    const fallbackNote = DEFAULT_NOTES_BY_RATING[parsedRating];
+    const finalNote = parsedNote && parsedNote.length <= 140 ? parsedNote : fallbackNote;
+    return { rating: parsedRating, note: finalNote };
   } finally {
     clearTimeout(timeout);
   }
@@ -138,8 +156,14 @@ async function ensureTable(sql) {
       id BIGSERIAL PRIMARY KEY,
       idea_text VARCHAR(180) NOT NULL,
       rating VARCHAR(20) NOT NULL,
+      rating_note VARCHAR(160) NOT NULL DEFAULT '',
       created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
     );
+  `;
+
+  await sql`
+    ALTER TABLE ideas
+    ADD COLUMN IF NOT EXISTS rating_note VARCHAR(160) NOT NULL DEFAULT '';
   `;
 
   await sql`
@@ -197,13 +221,18 @@ module.exports = async function handler(req, res) {
 
     if (req.method === "GET") {
       const rows = await sql`
-        SELECT id, idea_text, rating, created_at
+        SELECT id, idea_text, rating, rating_note, created_at
         FROM ideas
         ORDER BY created_at DESC
         LIMIT 100;
       `;
 
-      return res.status(200).json({ ideas: rows });
+      const normalizedRows = rows.map((row) => ({
+        ...row,
+        rating_note: row.rating_note && row.rating_note.trim() ? row.rating_note : DEFAULT_NOTES_BY_RATING[row.rating] || ""
+      }));
+
+      return res.status(200).json({ ideas: normalizedRows });
     }
 
     const body = parseJsonBody(req);
@@ -217,11 +246,11 @@ module.exports = async function handler(req, res) {
       return res.status(400).json({ error: `Idea must be ${MAX_IDEA_LENGTH} characters or less.` });
     }
 
-    const rating = await getAiRating(idea, deepseekApiKey, deepseekModel);
+    const aiResult = await getAiRating(idea, deepseekApiKey, deepseekModel);
     const [created] = await sql`
-      INSERT INTO ideas (idea_text, rating)
-      VALUES (${idea}, ${rating})
-      RETURNING id, idea_text, rating, created_at;
+      INSERT INTO ideas (idea_text, rating, rating_note)
+      VALUES (${idea}, ${aiResult.rating}, ${aiResult.note})
+      RETURNING id, idea_text, rating, rating_note, created_at;
     `;
 
     return res.status(201).json({ idea: created });
