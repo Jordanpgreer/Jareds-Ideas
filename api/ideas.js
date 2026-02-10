@@ -29,7 +29,7 @@ async function ensureTable(sql) {
   await sql`
     CREATE TABLE IF NOT EXISTS ideas (
       id BIGSERIAL PRIMARY KEY,
-      idea_text VARCHAR(${MAX_IDEA_LENGTH}) NOT NULL,
+      idea_text VARCHAR(180) NOT NULL,
       rating VARCHAR(20) NOT NULL,
       created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
     );
